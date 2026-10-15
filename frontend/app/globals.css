@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+html,
+body {
+  background: #12161a;
+  color: #e9e3d0;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2f35 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2f35;
+  border-radius: 4px;
+}
+
+.prose-doc :where(p, ul, ol) {
+  margin: 0.65em 0;
+}
+.prose-doc code {
+  background: #1f262c;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.prose-doc pre {
+  background: #1f262c;
+  padding: 0.85em 1em;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.prose-doc a {
+  color: #c9a96a;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

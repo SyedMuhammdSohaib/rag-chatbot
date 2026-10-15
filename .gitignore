@@ -1,0 +1,29 @@
+# Models & caches (too large for GitHub)
+ollama/
+ollama-models/
+cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+
+# Secrets
+.env
+.env.*
+
+# Build/install logs
+*.log
+
+# Local data (database, uploads, downloaded models)
+backend/data/
+# OS
+Thumbs.db
+.DS_Store
