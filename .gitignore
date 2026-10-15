@@ -26,4 +26,5 @@ env/
 backend/data/
 # OS
 Thumbs.db
-.DS_Store!.env.example
+.DS_Store
+!.env.example
