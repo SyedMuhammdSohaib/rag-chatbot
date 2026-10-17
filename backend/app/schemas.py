@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentOut(BaseModel):
@@ -70,6 +70,8 @@ class ChatRequest(BaseModel):
     # conversation) — lets the UI set a custom system prompt from the
     # first message rather than requiring a separate call first.
     system_prompt: str | None = None
+    # "en" (default), "ur" (Urdu script) or "roman_ur"
+    language: str | None = None
 
 
 class SourceChunk(BaseModel):
@@ -78,3 +80,36 @@ class SourceChunk(BaseModel):
     filename: str
     content: str
     score: float
+
+
+class ChunkContext(BaseModel):
+    """One source chunk plus the text just before and after it, for the
+    "show me where this came from" viewer."""
+
+    chunk_id: str
+    document_id: str
+    filename: str
+    chunk_index: int
+    chunk_count: int
+    before: str
+    content: str
+    after: str
+
+
+class QuizRequest(BaseModel):
+    document_id: uuid.UUID | None = None  # None = all ready documents
+    num_questions: int = Field(5, ge=1, le=10)
+    language: str | None = None
+
+
+class QuizQuestion(BaseModel):
+    question: str
+    options: list[str]
+    answer_index: int
+    explanation: str
+    chunk_id: str
+    filename: str
+
+
+class QuizOut(BaseModel):
+    questions: list[QuizQuestion]

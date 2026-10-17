@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.database import AsyncSessionLocal, get_db
+from app.language import with_language
 from app.llm import stream_chat_completion
 from app.models import Conversation, Message
 from app.retrieval import build_context_block, retrieve_relevant_chunks
@@ -45,6 +46,7 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
         conversation_id = convo.id
 
     active_system_prompt = convo.system_prompt or DEFAULT_SYSTEM_PROMPT
+    model_system_prompt = with_language(active_system_prompt, body.language)
 
     # Pull recent history for conversational memory
     result = await db.execute(
@@ -79,7 +81,7 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
     async def event_generator():
         full_response = ""
         try:
-            async for token in stream_chat_completion(active_system_prompt, history, augmented_user_message):
+            async for token in stream_chat_completion(model_system_prompt, history, augmented_user_message):
                 full_response += token
                 yield {"event": "token", "data": json.dumps({"text": token})}
         except Exception as exc:  # noqa: BLE001

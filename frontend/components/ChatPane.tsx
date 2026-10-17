@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { streamChat, type Message, type SourceChunk } from "@/lib/api";
+import { LANGUAGES, micLangFor, speechLangFor, useLanguage, type Language } from "@/lib/language";
+import { canListen, canSpeak, listen, speak, stopSpeaking } from "@/lib/speech";
 import MessageBubble from "./MessageBubble";
+import SourceViewer from "./SourceViewer";
 
 type DisplayMessage = {
   id: string;
@@ -28,14 +31,32 @@ export default function ChatPane({
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [language, setLanguage] = useLanguage();
+  const [listening, setListening] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [openChunkId, setOpenChunkId] = useState<string | null>(null);
+  // Checked after mount: the server render has no window to ask
+  const [voice, setVoice] = useState({ listen: false, speak: false });
+  const stopListeningRef = useRef<() => void>(() => {});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setMessages(
-      initialMessages.map((m) => ({
+    setVoice({ listen: canListen(), speak: canSpeak() });
+    return () => {
+      stopListeningRef.current();
+      stopSpeaking();
+    };
+  }, []);
+
+  useEffect(() => {
+    // Saved messages come back without sources; keep the ones already on
+    // screen (e.g. the first answer of a conversation that was just created)
+    setMessages((prev) =>
+      initialMessages.map((m, i) => ({
         id: m.id,
         role: m.role,
         content: m.content,
+        sources: prev[i]?.role === m.role && prev[i]?.content === m.content ? prev[i].sources : undefined,
       }))
     );
   }, [initialMessages]);
@@ -44,8 +65,42 @@ export default function ChatPane({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSend() {
-    const text = input.trim();
+  function toggleSpeak(id: string, text: string, lang: Language = language) {
+    if (speakingId === id) {
+      stopSpeaking();
+      setSpeakingId(null);
+      return;
+    }
+    setSpeakingId(id);
+    speak(text, speechLangFor(lang), () => setSpeakingId((cur) => (cur === id ? null : cur)));
+  }
+
+  function toggleMic() {
+    if (listening) {
+      stopListeningRef.current();
+      return;
+    }
+    setError(null);
+    stopSpeaking();
+    setSpeakingId(null);
+    setListening(true);
+    let heard = "";
+    stopListeningRef.current = listen(micLangFor(language), {
+      onText: (text) => {
+        heard = text;
+        setInput(text);
+      },
+      onError: setError,
+      onEnd: () => {
+        setListening(false);
+        // A spoken question gets a spoken answer
+        if (heard.trim()) handleSend(heard, true);
+      },
+    });
+  }
+
+  async function handleSend(spokenText?: string, readAnswerAloud = false) {
+    const text = (spokenText ?? input).trim();
     if (!text || streaming) return;
     setError(null);
     setInput("");
@@ -54,6 +109,8 @@ export default function ChatPane({
     const assistantId = `local-assistant-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
     setStreaming(true);
+    let answer = "";
+    const answerLanguage = language;
 
     try {
       await streamChat(
@@ -61,6 +118,7 @@ export default function ChatPane({
         conversationId,
         {
           onToken: (token) => {
+            answer += token;
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + token } : m))
             );
@@ -71,6 +129,7 @@ export default function ChatPane({
             );
             if (!conversationId) onConversationCreated(data.conversation_id);
             setStreaming(false);
+            if (readAnswerAloud && answer.trim()) toggleSpeak(assistantId, answer, answerLanguage);
           },
           onError: (msg) => {
             setError(msg);
@@ -81,7 +140,8 @@ export default function ChatPane({
             setStreaming(false);
           },
         },
-        draftSystemPrompt
+        draftSystemPrompt,
+        language
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -111,6 +171,9 @@ export default function ChatPane({
               content={m.content}
               sources={m.sources}
               streaming={streaming && m.role === "assistant" && m.content === ""}
+              speaking={speakingId === m.id}
+              onSpeak={voice.speak ? () => toggleSpeak(m.id, m.content) : undefined}
+              onSourceClick={setOpenChunkId}
             />
           ))}
           {error && (
@@ -124,6 +187,18 @@ export default function ChatPane({
 
       <div className="border-t border-line px-6 py-4">
         <div className="mx-auto flex max-w-3xl items-end gap-3">
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value as Language)}
+            title="Answer language"
+            className="rounded-lg border border-line bg-panel px-2 py-3 text-sm text-parchment outline-none focus:border-brass"
+          >
+            {LANGUAGES.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -133,12 +208,27 @@ export default function ChatPane({
                 handleSend();
               }
             }}
-            placeholder="Ask a question…"
+            placeholder={listening ? "Listening… speak now" : "Ask a question…"}
+            dir="auto"
             rows={1}
             className="max-h-40 flex-1 resize-none rounded-lg border border-line bg-panel px-4 py-3 text-sm text-parchment outline-none placeholder:text-parchmentDim focus:border-brass"
           />
+          {voice.listen && (
+            <button
+              onClick={toggleMic}
+              disabled={streaming}
+              title={listening ? "Stop listening" : "Ask by voice"}
+              className={`rounded-lg border px-3 py-3 text-sm transition disabled:opacity-40 ${
+                listening
+                  ? "animate-pulse border-error bg-error/20 text-parchment"
+                  : "border-line bg-panel text-parchmentDim hover:border-brass hover:text-brass"
+              }`}
+            >
+              🎤
+            </button>
+          )}
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={streaming || !input.trim()}
             className="rounded-lg bg-brass px-4 py-3 text-sm font-medium text-ink transition disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -146,6 +236,8 @@ export default function ChatPane({
           </button>
         </div>
       </div>
+
+      {openChunkId && <SourceViewer chunkId={openChunkId} onClose={() => setOpenChunkId(null)} />}
     </div>
   );
 }

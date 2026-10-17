@@ -15,6 +15,10 @@ Upload documents and ask questions. The bot answers from your files and shows th
 - 🖥️ **Runs locally**: local LLM via [Ollama](https://ollama.com) and local embeddings via [fastembed](https://github.com/qdrant/fastembed)
 - 🌐 **Optional free online models**: Groq and Gemini, with automatic fallback when a rate limit is hit
 - ⚡ **Answer cache**: the same question with the same documents and prompt is answered from memory, with no new model call
+- 🗣️ **Answer language**: English, Urdu (اردو) or Roman Urdu, picked from a dropdown next to the chat box
+- 📝 **Quiz mode**: the bot writes multiple-choice questions from your documents, you answer, and it keeps score
+- 🔍 **Click a source to see the passage**: opens the exact part of the file the answer used, highlighted, plus a link to the original file
+- 🎤 **Voice**: ask by microphone (Chrome/Edge, needs internet) and the answer is read aloud; every answer also has a 🔊 Listen button
 - 🌙 Dark-theme UI
 
 ## Tech stack
@@ -38,13 +42,13 @@ rag-chatbot/
 │   │   ├── ingestion.py     # document parsing + chunking
 │   │   ├── retrieval.py     # vector search
 │   │   ├── llm.py           # Ollama / Groq / Gemini + embeddings
-│   │   └── routers/         # chat, conversations, documents, presets
+│   │   └── routers/         # chat, conversations, documents, presets, quiz
 │   ├── requirements.txt
 │   └── .env.example         # copy to .env and edit
 ├── frontend/
 │   ├── app/                 # Next.js pages
-│   ├── components/          # ChatPane, Sidebar, DocumentUpload, ...
-│   └── lib/api.ts           # backend API client
+│   ├── components/          # ChatPane, Sidebar, SourceViewer, ...
+│   └── lib/                 # api.ts (backend client), language.ts, speech.ts
 ├── setup.bat                # one-time setup
 ├── start.bat                # start the app
 ├── stop.bat                 # stop the app

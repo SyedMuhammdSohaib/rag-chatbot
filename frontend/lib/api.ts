@@ -31,6 +31,26 @@ export type SourceChunk = {
   score: number;
 };
 
+export type ChunkContext = {
+  chunk_id: string;
+  document_id: string;
+  filename: string;
+  chunk_index: number;
+  chunk_count: number;
+  before: string;
+  content: string;
+  after: string;
+};
+
+export type QuizQuestion = {
+  question: string;
+  options: string[];
+  answer_index: number;
+  explanation: string;
+  chunk_id: string;
+  filename: string;
+};
+
 export type DocumentItem = {
   id: string;
   filename: string;
@@ -44,7 +64,15 @@ export type DocumentItem = {
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed with status ${res.status}`);
+    let message = text;
+    try {
+      // FastAPI errors look like {"detail": "..."}; show just the sentence
+      const detail = JSON.parse(text).detail;
+      if (typeof detail === "string") message = detail;
+    } catch {
+      // not JSON: use the raw text
+    }
+    throw new Error(message || `Request failed with status ${res.status}`);
   }
   return res.json();
 }
@@ -102,6 +130,18 @@ export const api = {
 
   deleteDocument: (id: string) =>
     fetch(`${API_BASE}/documents/${id}`, { method: "DELETE" }).then((r) => json(r)),
+
+  getChunkContext: (chunkId: string) =>
+    fetch(`${API_BASE}/documents/chunks/${chunkId}`).then((r) => json<ChunkContext>(r)),
+
+  documentFileUrl: (documentId: string) => `${API_BASE}/documents/${documentId}/file`,
+
+  createQuiz: (documentId: string | null, numQuestions: number, language: string) =>
+    fetch(`${API_BASE}/quiz`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: documentId, num_questions: numQuestions, language }),
+    }).then((r) => json<{ questions: QuizQuestion[] }>(r)),
 };
 
 /**
@@ -120,7 +160,8 @@ export async function streamChat(
   },
   // Only applied when conversationId is null (starting a brand-new
   // conversation) — sets its system prompt from the first message.
-  newConversationSystemPrompt?: string | null
+  newConversationSystemPrompt?: string | null,
+  language?: string
 ) {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
@@ -129,6 +170,7 @@ export async function streamChat(
       message,
       conversation_id: conversationId,
       system_prompt: conversationId ? undefined : newConversationSystemPrompt,
+      language,
     }),
   });
 

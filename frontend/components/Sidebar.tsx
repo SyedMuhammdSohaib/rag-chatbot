@@ -104,17 +104,23 @@ export default function Sidebar({
         </ul>
       </nav>
 
-      <div className="border-t border-line p-3">
-        <Link
-          href="/documents"
-          className={`block rounded-md px-3 py-2 text-sm transition ${
-            pathname === "/documents"
-              ? "bg-surface text-brass"
-              : "text-parchmentDim hover:bg-surface/60 hover:text-parchment"
-          }`}
-        >
-          📄 Documents
-        </Link>
+      <div className="space-y-0.5 border-t border-line p-3">
+        {[
+          { href: "/documents", label: "📄 Documents" },
+          { href: "/quiz", label: "📝 Quiz" },
+        ].map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={`block rounded-md px-3 py-2 text-sm transition ${
+              pathname === link.href
+                ? "bg-surface text-brass"
+                : "text-parchmentDim hover:bg-surface/60 hover:text-parchment"
+            }`}
+          >
+            {link.label}
+          </Link>
+        ))}
       </div>
     </aside>
   );

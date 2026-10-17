@@ -105,8 +105,8 @@ def _retry_after_seconds(exc: RateLimitError) -> float:
         return 0.0
 
 
-async def _stream_one(provider: str, model: str, messages: list[dict]) -> AsyncIterator[str]:
-    kwargs = dict(model=model, messages=messages, stream=True, temperature=0.2, max_tokens=settings.max_answer_tokens)
+async def _stream_one(provider: str, model: str, messages: list[dict], max_tokens: int) -> AsyncIterator[str]:
+    kwargs = dict(model=model, messages=messages, stream=True, temperature=0.2, max_tokens=max_tokens)
     if provider == "groq" and model.startswith("openai/gpt-oss"):
         # These models "think" before answering; low effort uses far fewer tokens
         kwargs["extra_body"] = {"reasoning_effort": "low"}
@@ -129,7 +129,10 @@ def _cache_key(messages: list[dict]) -> str:
     return hashlib.sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-async def stream_chat_completion(system_prompt: str, history: list[dict], user_message: str) -> AsyncIterator[str]:
+async def stream_chat_completion(
+    system_prompt: str, history: list[dict], user_message: str, max_tokens: int | None = None
+) -> AsyncIterator[str]:
+    max_tokens = max_tokens or settings.max_answer_tokens
     messages = [{"role": "system", "content": system_prompt}, *history, {"role": "user", "content": user_message}]
 
     key = _cache_key(messages)
@@ -144,7 +147,7 @@ async def stream_chat_completion(system_prompt: str, history: list[dict], user_m
     shortest_wait = None
 
     async def run(provider: str, model: str):
-        async for token in _stream_one(provider, model, messages):
+        async for token in _stream_one(provider, model, messages, max_tokens):
             answer_parts.append(token)
             yield token
 
