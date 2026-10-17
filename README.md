@@ -19,7 +19,16 @@ Upload documents and ask questions. The bot answers from your files and shows th
 - 📝 **Quiz mode**: the bot writes multiple-choice questions from your documents, you answer, and it keeps score
 - 🔍 **Click a source to see the passage**: opens the exact part of the file the answer used, highlighted, plus a link to the original file
 - 🎤 **Voice**: ask by microphone (Chrome/Edge, needs internet) and the answer is read aloud; every answer also has a 🔊 Listen button
-- 🌙 Dark-theme UI
+- ✨ **Summary and suggested questions**: every new document gets a short summary, key points and 4 questions you can click to ask
+- 🆚 **Compare two documents**: what both cover, what is only in one, and where they disagree
+- 🔗 **Web pages and YouTube**: paste a link and the page text (or the video's captions, or a linked PDF) becomes a document
+- 🖼️ **OCR**: scanned PDFs and photos (PNG/JPG) are read with RapidOCR, on your PC (English print)
+- ⬇️ **Export a chat** as Markdown, or as PDF through the browser's print dialog
+- ⚖️ **Compare models**: one question, answered by Ollama, Groq and Gemini side by side, with timings
+- 👍 / 👎 **Ratings** on every answer, plus which model answered (or "from cache")
+- 🎭 **Personas**: Teacher, Dost and Strict Examiner, one click in the System Prompt panel
+- 📊 **Stats page**: questions per day, most-cited documents, cache hits and ratings per model
+- 🌗 Light and dark themes
 
 ## Tech stack
 
@@ -42,13 +51,15 @@ rag-chatbot/
 │   │   ├── ingestion.py     # document parsing + chunking
 │   │   ├── retrieval.py     # vector search
 │   │   ├── llm.py           # Ollama / Groq / Gemini + embeddings
-│   │   └── routers/         # chat, conversations, documents, presets, quiz
+│   │   ├── summary.py       # document summaries + comparing two documents
+│   │   ├── web.py           # web page / YouTube links -> documents
+│   │   └── routers/         # chat, conversations, documents, presets, quiz, stats
 │   ├── requirements.txt
 │   └── .env.example         # copy to .env and edit
 ├── frontend/
 │   ├── app/                 # Next.js pages
 │   ├── components/          # ChatPane, Sidebar, SourceViewer, ...
-│   └── lib/                 # api.ts (backend client), language.ts, speech.ts
+│   └── lib/                 # api.ts (backend client), language, speech, theme, export
 ├── setup.bat                # one-time setup
 ├── start.bat                # start the app
 ├── stop.bat                 # stop the app

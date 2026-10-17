@@ -3,6 +3,37 @@
 import { useEffect, useState } from "react";
 import { api, type PromptPreset } from "@/lib/api";
 
+// Every persona keeps the grounding rules, so answers still come from the
+// documents and cite [Source N]; only the voice changes.
+const GROUNDING =
+  "Answer using the provided document context and cite sources by their [Source N] label. " +
+  "If the context doesn't contain the answer, say so plainly rather than guessing.";
+
+const PERSONAS = [
+  {
+    name: "👩‍🏫 Teacher",
+    prompt:
+      "You are a patient teacher. Explain step by step in simple words, give a small everyday example, " +
+      "and end with one short question that checks the student understood. " +
+      GROUNDING,
+  },
+  {
+    name: "😎 Dost",
+    prompt:
+      "You are the user's friendly, casual best friend (dost). Keep it short, warm and fun, use an " +
+      "emoji or two, and explain things the way friends chat, without sounding like a textbook. " +
+      GROUNDING,
+  },
+  {
+    name: "🧐 Strict Examiner",
+    prompt:
+      "You are a strict examiner. Be brief and precise, point out anything vague or wrong in the " +
+      "question, and when the user states an answer, mark it out of 10 with exact corrections. " +
+      "No small talk. " +
+      GROUNDING,
+  },
+];
+
 export default function SystemPromptPanel({
   conversationId,
   draftPrompt,
@@ -67,7 +98,8 @@ export default function SystemPromptPanel({
       <p className="mt-1 text-xs text-parchmentDim">
         {conversationId
           ? "Edit and save to change how this conversation behaves."
-          : "Set this before sending your first message to a new conversation."}
+          : "Set this before sending your first message to a new conversation."}{" "}
+        Or pick a persona below.
       </p>
 
       <textarea
@@ -77,6 +109,23 @@ export default function SystemPromptPanel({
         placeholder="You are a helpful assistant answering questions using the provided document context..."
         className="mt-3 w-full resize-y rounded-lg border border-line bg-surface px-3 py-2 text-sm text-parchment outline-none placeholder:text-parchmentDim/60 focus:border-brass"
       />
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {PERSONAS.map((p) => (
+          <button
+            key={p.name}
+            onClick={() => onDraftChange(p.prompt)}
+            title={p.prompt}
+            className={`rounded-full border px-2.5 py-1 text-xs transition ${
+              draftPrompt === p.prompt
+                ? "border-brass bg-brass/15 text-brass"
+                : "border-line text-parchment hover:border-brass hover:text-brass"
+            }`}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
 
       {conversationId && (
         <button

@@ -19,3 +19,10 @@ tqdm==4.66.5
 numpy<2
 pypdf==5.0.1
 docx2txt==0.8
+# OCR for scanned PDFs and images (runs on the CPU, no internet needed)
+rapidocr-onnxruntime==1.4.4
+# newer opencv needs numpy 2, which fastembed 0.3.6 can't use
+opencv-python==4.11.0.86
+pypdfium2==4.30.0
+# captions of YouTube videos added by link
+youtube-transcript-api==1.2.2

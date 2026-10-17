@@ -1,16 +1,18 @@
 import os
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal, get_db
-from app.ingestion import ingest_document
+from app.ingestion import IMAGE_EXTENSIONS, ingest_document
 from app.models import Chunk, Document
-from app.schemas import ChunkContext, DocumentOut
+from app.schemas import ChunkContext, CompareDocumentsRequest, DocumentOut, LinkRequest, SummaryRequest
+from app.summary import compare_documents, summarize_document
+from app.web import fetch_link
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 settings = get_settings()
@@ -20,7 +22,7 @@ ALLOWED_TYPES = {
     "text/plain",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
-ALLOWED_EXTENSIONS = (".pdf", ".txt", ".docx")
+ALLOWED_EXTENSIONS = (".pdf", ".txt", ".docx", *IMAGE_EXTENSIONS)
 
 
 def _upload_path(doc: Document) -> str:
@@ -50,36 +52,98 @@ def _join_after(content: str, after: str) -> str:
     return after[size:] if size else ("\n\n" + after if after else "")
 
 
-async def _run_ingestion(document_id: uuid.UUID, path: str, content_type: str) -> None:
+async def _run_ingestion(document_id: uuid.UUID, path: str, content_type: str, language: str | None) -> None:
     # Background tasks get their own DB session, independent of the
     # request-scoped one that has already been returned to the pool.
     async with AsyncSessionLocal() as db:
         await ingest_document(db, document_id, path, content_type)
+    # Summary + suggested questions; skipped by itself if ingestion failed
+    await summarize_document(document_id, language)
+
+
+async def _save_and_ingest(
+    db: AsyncSession,
+    background_tasks: BackgroundTasks,
+    filename: str,
+    content: bytes,
+    content_type: str,
+    language: str | None,
+    source_url: str | None = None,
+) -> Document:
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    doc = Document(filename=filename, content_type=content_type, status="pending", source_url=source_url)
+    db.add(doc)
+    await db.flush()
+
+    dest_path = _upload_path(doc)
+    with open(dest_path, "wb") as out:
+        out.write(content)
+
+    await db.commit()
+    await db.refresh(doc)
+
+    background_tasks.add_task(_run_ingestion, doc.id, dest_path, content_type, language)
+    return doc
 
 
 @router.post("/upload", response_model=DocumentOut)
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    language: str | None = Form(None),  # language of the auto summary
     db: AsyncSession = Depends(get_db),
 ):
     if not file.filename.lower().endswith(ALLOWED_EXTENSIONS):
-        raise HTTPException(400, "Only .pdf, .txt, and .docx files are supported")
+        raise HTTPException(400, "Only .pdf, .txt, .docx and image files (.png, .jpg) are supported")
 
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    doc = Document(filename=file.filename, content_type=file.content_type or "", status="pending")
-    db.add(doc)
-    await db.flush()
+    return await _save_and_ingest(
+        db, background_tasks, file.filename, await file.read(), file.content_type or "", language
+    )
 
-    dest_path = _upload_path(doc)
-    with open(dest_path, "wb") as out:
-        out.write(await file.read())
 
+@router.post("/link", response_model=DocumentOut)
+async def add_link(body: LinkRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    url = body.url.strip()
+    try:
+        filename, content, content_type = await fetch_link(url)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return await _save_and_ingest(db, background_tasks, filename, content, content_type, body.language, url)
+
+
+@router.post("/compare")
+async def compare(body: CompareDocumentsRequest, db: AsyncSession = Depends(get_db)):
+    if body.document_a == body.document_b:
+        raise HTTPException(400, "Pick two different documents")
+    doc_a = await db.get(Document, body.document_a)
+    doc_b = await db.get(Document, body.document_b)
+    if not doc_a or not doc_b:
+        raise HTTPException(404, "Document not found")
+    if doc_a.status != "ready" or doc_b.status != "ready":
+        raise HTTPException(400, "Both documents must finish processing first")
+    try:
+        answer = await compare_documents(doc_a, doc_b, body.language)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"LLM error: {exc}") from exc
+    return {"answer": answer}
+
+
+@router.post("/{document_id}/summary", response_model=DocumentOut)
+async def resummarize(
+    document_id: uuid.UUID,
+    body: SummaryRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    doc = await db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc.status != "ready":
+        raise HTTPException(400, "The document is still processing")
+    doc.summary_status = "pending"
     await db.commit()
     await db.refresh(doc)
-
-    background_tasks.add_task(_run_ingestion, doc.id, dest_path, file.content_type or "")
-
+    background_tasks.add_task(summarize_document, doc.id, body.language)
     return doc
 
 
@@ -114,6 +178,7 @@ async def get_chunk_context(chunk_id: uuid.UUID, db: AsyncSession = Depends(get_
         filename=doc.filename,
         chunk_index=chunk.chunk_index,
         chunk_count=doc.chunk_count,
+        source_url=doc.source_url,
         before=_join_before(before, chunk.content),
         content=chunk.content,
         after=_join_after(chunk.content, after),

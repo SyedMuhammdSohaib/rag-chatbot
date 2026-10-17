@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { streamChat, type Message, type SourceChunk } from "@/lib/api";
+import { api, streamChat, type Message, type SourceChunk } from "@/lib/api";
 import { LANGUAGES, micLangFor, speechLangFor, useLanguage, type Language } from "@/lib/language";
 import { canListen, canSpeak, listen, speak, stopSpeaking } from "@/lib/speech";
 import MessageBubble from "./MessageBubble";
@@ -12,6 +12,8 @@ type DisplayMessage = {
   role: "user" | "assistant";
   content: string;
   sources?: SourceChunk[];
+  rating?: number | null;
+  model?: string | null;
 };
 
 export default function ChatPane({
@@ -19,6 +21,8 @@ export default function ChatPane({
   initialMessages,
   onConversationCreated,
   draftSystemPrompt,
+  askOnLoad,
+  onAsked,
 }: {
   conversationId: string | null;
   initialMessages: Message[];
@@ -26,6 +30,9 @@ export default function ChatPane({
   // Only used when conversationId is null — applied to the conversation
   // this first message creates.
   draftSystemPrompt?: string;
+  // A question to send right away (from a "suggested question" link)
+  askOnLoad?: string | null;
+  onAsked?: () => void;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
@@ -37,6 +44,7 @@ export default function ChatPane({
   const [openChunkId, setOpenChunkId] = useState<string | null>(null);
   // Checked after mount: the server render has no window to ask
   const [voice, setVoice] = useState({ listen: false, speak: false });
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const stopListeningRef = useRef<() => void>(() => {});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -55,9 +63,47 @@ export default function ChatPane({
         role: m.role,
         content: m.content,
         sources: m.sources,
+        rating: m.rating,
+        model: m.model,
       }))
     );
   }, [initialMessages]);
+
+  // Starter questions written for the newest documents
+  useEffect(() => {
+    api
+      .listDocuments()
+      .then((docs) =>
+        setSuggestions(
+          Array.from(
+            new Set(docs.filter((d) => d.status === "ready").flatMap((d) => (d.suggested_questions || []).slice(0, 2)))
+          ).slice(0, 4)
+        )
+      )
+      .catch(() => setSuggestions([]));
+  }, []);
+
+  const askedRef = useRef<string | null>(null);
+  useEffect(() => {
+    // The ref stops React's dev-mode double effect from asking twice
+    if (askOnLoad && !streaming && askedRef.current !== askOnLoad) {
+      askedRef.current = askOnLoad;
+      onAsked?.();
+      handleSend(askOnLoad);
+    }
+    // Only when a new question arrives; handleSend reads the latest state
+  }, [askOnLoad]);
+
+  async function handleRate(id: string, value: number) {
+    const current = messages.find((m) => m.id === id)?.rating ?? null;
+    const next = current === value ? null : value; // clicking again clears it
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, rating: next } : m)));
+    try {
+      await api.rateMessage(id, next);
+    } catch {
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, rating: current } : m)));
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -122,12 +168,17 @@ export default function ChatPane({
             );
           },
           onDone: (data) => {
+            // Swap the temporary id for the saved one so the answer can be rated
             setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, sources: data.sources } : m))
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, id: data.message_id, sources: data.sources, model: data.model, rating: null }
+                  : m
+              )
             );
             if (!conversationId) onConversationCreated(data.conversation_id);
             setStreaming(false);
-            if (readAnswerAloud && answer.trim()) toggleSpeak(assistantId, answer, answerLanguage);
+            if (readAnswerAloud && answer.trim()) toggleSpeak(data.message_id, answer, answerLanguage);
           },
           onError: (msg) => {
             setError(msg);
@@ -160,6 +211,20 @@ export default function ChatPane({
                 Upload files on the Documents page, then ask a question here — answers are
                 grounded in what you've uploaded, with sources listed underneath.
               </p>
+              {suggestions.length > 0 && (
+                <div className="mt-5 flex flex-wrap justify-center gap-2 px-6">
+                  {suggestions.map((q) => (
+                    <button
+                      key={q}
+                      dir="auto"
+                      onClick={() => handleSend(q)}
+                      className="rounded-full border border-brassSoft/50 px-3 py-1.5 text-xs text-parchment transition hover:border-brass hover:text-brass"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {messages.map((m) => (
@@ -170,6 +235,9 @@ export default function ChatPane({
               sources={m.sources}
               streaming={streaming && m.role === "assistant" && m.content === ""}
               speaking={speakingId === m.id}
+              rating={m.rating ?? null}
+              model={m.model ?? null}
+              onRate={m.id.startsWith("local-") ? undefined : (value) => handleRate(m.id, value)}
               onSpeak={voice.speak ? () => toggleSpeak(m.id, m.content) : undefined}
               onSourceClick={setOpenChunkId}
             />

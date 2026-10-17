@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 
@@ -8,10 +9,10 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.database import AsyncSessionLocal, get_db
 from app.language import with_language
-from app.llm import stream_chat_completion
+from app.llm import answer_with, comparison_models, stream_chat_completion
 from app.models import Conversation, Message
 from app.retrieval import build_context_block, retrieve_relevant_chunks
-from app.schemas import ChatRequest
+from app.schemas import ChatRequest, CompareModelsRequest
 
 from app.config import get_settings
 
@@ -80,8 +81,11 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     async def event_generator():
         full_response = ""
+        info: dict = {}
         try:
-            async for token in stream_chat_completion(model_system_prompt, history, augmented_user_message):
+            async for token in stream_chat_completion(
+                model_system_prompt, history, augmented_user_message, info=info
+            ):
                 full_response += token
                 yield {"event": "token", "data": json.dumps({"text": token})}
         except Exception as exc:  # noqa: BLE001
@@ -97,6 +101,7 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                 content=full_response,
                 cited_chunk_ids=[s.chunk_id for s in sources],
                 cited_scores=[s.score for s in sources],
+                model=info.get("model"),
             )
             save_db.add(assistant_msg)
             await save_db.commit()
@@ -108,8 +113,32 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                     "conversation_id": str(conversation_id),
                     "sources": [s.model_dump() for s in sources],
                     "system_prompt": active_system_prompt,
+                    "message_id": str(assistant_msg.id),
+                    "model": assistant_msg.model,
                 }
             ),
         }
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/compare")
+async def compare_models(body: CompareModelsRequest, db: AsyncSession = Depends(get_db)):
+    """Puts the same question, with the same document context, to one model
+    from each provider at once, for side-by-side comparison. Not saved."""
+    models = await comparison_models()
+    if not models:
+        raise HTTPException(
+            400,
+            "No model is available. Start Ollama, or add GROQ_API_KEY / GEMINI_API_KEY to backend\\.env.",
+        )
+    try:
+        sources = await retrieve_relevant_chunks(db, body.message)
+    except Exception:  # noqa: BLE001
+        sources = []
+    messages = [
+        {"role": "system", "content": with_language(body.system_prompt or DEFAULT_SYSTEM_PROMPT, body.language)},
+        {"role": "user", "content": f"Context:\n{build_context_block(sources)}\n\nQuestion: {body.message}"},
+    ]
+    results = await asyncio.gather(*(answer_with(provider, model, messages) for provider, model in models))
+    return {"sources": [s.model_dump() for s in sources], "results": results}

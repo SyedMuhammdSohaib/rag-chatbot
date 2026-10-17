@@ -11,6 +11,7 @@ from app.schemas import (
     ConversationOut,
     ConversationRename,
     MessageOut,
+    RatingUpdate,
     SourceChunk,
     SystemPromptUpdate,
 )
@@ -103,3 +104,14 @@ async def delete_conversation(conversation_id: uuid.UUID, db: AsyncSession = Dep
     await db.delete(convo)
     await db.commit()
     return {"deleted": True}
+
+
+@router.patch("/messages/{message_id}/rating", response_model=MessageOut)
+async def rate_message(message_id: uuid.UUID, body: RatingUpdate, db: AsyncSession = Depends(get_db)):
+    msg = await db.get(Message, message_id)
+    if not msg or msg.role != "assistant":
+        raise HTTPException(404, "Answer not found")
+    msg.rating = body.rating or None  # 0 also clears the rating
+    await db.commit()
+    await db.refresh(msg)
+    return msg

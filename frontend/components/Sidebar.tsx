@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import type { Conversation } from "@/lib/api";
+import { useTheme } from "@/lib/theme";
 
 export default function Sidebar({
   conversations,
@@ -25,6 +26,7 @@ export default function Sidebar({
   const pathname = usePathname();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [theme, toggleTheme] = useTheme();
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col border-r border-line bg-panel">
@@ -108,6 +110,8 @@ export default function Sidebar({
         {[
           { href: "/documents", label: "📄 Documents" },
           { href: "/quiz", label: "📝 Quiz" },
+          { href: "/compare", label: "⚖️ Compare models" },
+          { href: "/stats", label: "📊 Stats" },
         ].map((link) => (
           <Link
             key={link.href}
@@ -121,6 +125,12 @@ export default function Sidebar({
             {link.label}
           </Link>
         ))}
+        <button
+          onClick={toggleTheme}
+          className="block w-full rounded-md px-3 py-2 text-left text-sm text-parchmentDim transition hover:bg-surface/60 hover:text-parchment"
+        >
+          {theme === "dark" ? "☀️ Light theme" : "🌙 Dark theme"}
+        </button>
       </div>
     </aside>
   );

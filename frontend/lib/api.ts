@@ -21,6 +21,8 @@ export type Message = {
   content: string;
   created_at: string;
   cited_chunk_ids: string[];
+  rating: number | null;
+  model: string | null;
   sources: SourceChunk[];
 };
 
@@ -38,6 +40,7 @@ export type ChunkContext = {
   filename: string;
   chunk_index: number;
   chunk_count: number;
+  source_url: string | null;
   before: string;
   content: string;
   after: string;
@@ -60,7 +63,34 @@ export type DocumentItem = {
   error_message: string | null;
   uploaded_at: string;
   chunk_count: number;
+  source_url: string | null;
+  summary_status: "pending" | "done" | "failed" | null;
+  summary: string | null;
+  key_points: string[] | null;
+  suggested_questions: string[] | null;
 };
+
+export type ModelAnswer = {
+  provider: string;
+  model: string;
+  answer: string;
+  error: string | null;
+  seconds: number;
+};
+
+export type Stats = {
+  documents: number;
+  chunks: number;
+  conversations: number;
+  questions: number;
+  answers: number;
+  cache_hits: number;
+  models: { model: string; answers: number; thumbs_up: number; thumbs_down: number }[];
+  top_documents: { filename: string; citations: number }[];
+  questions_per_day: { date: string; count: number }[];
+};
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -121,9 +151,10 @@ export const api = {
 
   listDocuments: () => fetch(`${API_BASE}/documents`).then((r) => json<DocumentItem[]>(r)),
 
-  uploadDocument: (file: File) => {
+  uploadDocument: (file: File, language?: string) => {
     const form = new FormData();
     form.append("file", file);
+    if (language) form.append("language", language);
     return fetch(`${API_BASE}/documents/upload`, { method: "POST", body: form }).then((r) =>
       json<DocumentItem>(r)
     );
@@ -136,6 +167,43 @@ export const api = {
     fetch(`${API_BASE}/documents/chunks/${chunkId}`).then((r) => json<ChunkContext>(r)),
 
   documentFileUrl: (documentId: string) => `${API_BASE}/documents/${documentId}/file`,
+
+  addLink: (url: string, language: string) =>
+    fetch(`${API_BASE}/documents/link`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ url, language }),
+    }).then((r) => json<DocumentItem>(r)),
+
+  resummarize: (documentId: string, language: string) =>
+    fetch(`${API_BASE}/documents/${documentId}/summary`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ language }),
+    }).then((r) => json<DocumentItem>(r)),
+
+  compareDocuments: (documentA: string, documentB: string, language: string) =>
+    fetch(`${API_BASE}/documents/compare`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ document_a: documentA, document_b: documentB, language }),
+    }).then((r) => json<{ answer: string }>(r)),
+
+  rateMessage: (messageId: string, rating: number | null) =>
+    fetch(`${API_BASE}/conversations/messages/${messageId}/rating`, {
+      method: "PATCH",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ rating }),
+    }).then((r) => json<Message>(r)),
+
+  compareModels: (message: string, language: string, systemPrompt?: string) =>
+    fetch(`${API_BASE}/chat/compare`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ message, language, system_prompt: systemPrompt || null }),
+    }).then((r) => json<{ sources: SourceChunk[]; results: ModelAnswer[] }>(r)),
+
+  getStats: () => fetch(`${API_BASE}/stats`).then((r) => json<Stats>(r)),
 
   createQuiz: (documentId: string | null, numQuestions: number, language: string) =>
     fetch(`${API_BASE}/quiz`, {
@@ -156,7 +224,13 @@ export async function streamChat(
   conversationId: string | null,
   handlers: {
     onToken: (text: string) => void;
-    onDone: (data: { conversation_id: string; sources: SourceChunk[]; system_prompt: string }) => void;
+    onDone: (data: {
+      conversation_id: string;
+      sources: SourceChunk[];
+      system_prompt: string;
+      message_id: string;
+      model: string | null;
+    }) => void;
     onError: (message: string) => void;
   },
   // Only applied when conversationId is null (starting a brand-new

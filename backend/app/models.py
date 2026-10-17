@@ -21,6 +21,13 @@ class Document(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Set for documents added from a web page or YouTube link
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Short summary written by the LLM after ingestion: pending|done|failed
+    summary_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_points: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    suggested_questions: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     chunks: Mapped[list["Chunk"]] = relationship(back_populates="document", cascade="all, delete-orphan")
 
@@ -62,6 +69,9 @@ class Message(Base):
     cited_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
     # Match score of each cited chunk, same order as cited_chunk_ids
     cited_scores: Mapped[list] = mapped_column(JSON, default=list)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1 = 👍, -1 = 👎
+    # "provider:model" that wrote the answer, or "cache"
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 

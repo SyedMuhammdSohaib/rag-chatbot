@@ -62,7 +62,7 @@ export default function SourceViewer({ chunkId, onClose }: { chunkId: string; on
               {data.before && <span className="text-parchmentDim/70">{data.before}</span>}
               <span
                 ref={highlightRef}
-                className="rounded bg-brass/20 text-parchment shadow-[0_0_0_3px_rgba(176,141,87,0.2)]"
+                className="rounded bg-brass/20 text-parchment shadow-[0_0_0_3px_rgb(var(--brass)/0.2)]"
               >
                 {data.content}
               </span>
@@ -74,12 +74,12 @@ export default function SourceViewer({ chunkId, onClose }: { chunkId: string; on
         {data && (
           <div className="border-t border-line px-5 py-3 text-right">
             <a
-              href={api.documentFileUrl(data.document_id)}
+              href={data.source_url || api.documentFileUrl(data.document_id)}
               target="_blank"
               rel="noreferrer"
               className="text-xs text-brass hover:underline"
             >
-              Open original file ↗
+              {data.source_url ? "Open original page ↗" : "Open original file ↗"}
             </a>
           </div>
         )}

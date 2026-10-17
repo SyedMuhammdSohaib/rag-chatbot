@@ -11,6 +11,8 @@ Embeddings always run locally (fastembed): no key, no limits.
 import asyncio
 import hashlib
 import json
+import re
+import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 
@@ -130,14 +132,22 @@ def _cache_key(messages: list[dict]) -> str:
 
 
 async def stream_chat_completion(
-    system_prompt: str, history: list[dict], user_message: str, max_tokens: int | None = None
+    system_prompt: str,
+    history: list[dict],
+    user_message: str,
+    max_tokens: int | None = None,
+    info: dict | None = None,
 ) -> AsyncIterator[str]:
+    """Streams the answer. If `info` is given, info["model"] is set to the
+    "provider:model" that answered, or "cache"."""
     max_tokens = max_tokens or settings.max_answer_tokens
+    info = info if info is not None else {}
     messages = [{"role": "system", "content": system_prompt}, *history, {"role": "user", "content": user_message}]
 
     key = _cache_key(messages)
     if key in _answer_cache:
         _answer_cache.move_to_end(key)
+        info["model"] = "cache"
         yield _answer_cache[key]
         return
 
@@ -166,6 +176,7 @@ async def stream_chat_completion(
                     yield token
                 answer = "".join(answer_parts)
                 if answer.strip():
+                    info["model"] = f"{provider}:{model}"
                     _answer_cache[key] = answer
                     while len(_answer_cache) > settings.answer_cache_size:
                         _answer_cache.popitem(last=False)
@@ -210,3 +221,57 @@ async def stream_chat_completion(
     if any("API key is wrong" in p for p in problems):
         hint += " Also check the API keys in backend\\.env."
     raise RuntimeError(f"All free models are busy right now ({'; '.join(problems)}).{hint}")
+
+
+async def complete(system_prompt: str, user_message: str, max_tokens: int | None = None) -> str:
+    """The whole answer at once, for features that need JSON or a full text
+    (quiz, summaries, comparisons) rather than a live stream."""
+    return "".join([t async for t in stream_chat_completion(system_prompt, [], user_message, max_tokens)])
+
+
+def parse_json_reply(raw: str):
+    """Pulls the JSON object or list out of a model reply, even when it is
+    wrapped in ```fences``` or has a sentence before it. None if there is none."""
+    text = re.sub(r"```(?:json)?", "", raw)
+    start = min((i for i in (text.find("{"), text.find("[")) if i != -1), default=-1)
+    end = max(text.rfind("}"), text.rfind("]"))
+    if start == -1 or end <= start:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+
+
+async def comparison_models() -> list[tuple[str, str]]:
+    """One model from each provider that is set up right now, whatever
+    LLM_PROVIDER says, so the same question can be put to all of them."""
+    out: list[tuple[str, str]] = []
+    if await _ollama_is_up():
+        out.append(("ollama", settings.ollama_chat_model))
+    if settings.groq_api_key:
+        out.append(("groq", settings.groq_chat_model))
+    if settings.gemini_api_key and _split(settings.gemini_models):
+        out.append(("gemini", _split(settings.gemini_models)[0]))
+    return out
+
+
+async def answer_with(provider: str, model: str, messages: list[dict]) -> dict:
+    """Asks exactly one model (no fallback, no cache) and times it."""
+    started = time.perf_counter()
+    try:
+        parts = [t async for t in _stream_one(provider, model, messages, settings.max_answer_tokens)]
+        answer, error = "".join(parts), None
+    except RateLimitError:
+        answer, error = "", "Free limit reached for this model. Try again in a minute."
+    except AuthenticationError:
+        answer, error = "", "API key is wrong."
+    except Exception as exc:  # noqa: BLE001
+        answer, error = "", str(exc)[:300]
+    return {
+        "provider": provider,
+        "model": model,
+        "answer": answer,
+        "error": error,
+        "seconds": round(time.perf_counter() - started, 1),
+    }

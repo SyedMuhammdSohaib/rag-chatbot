@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import numpy as np
@@ -11,15 +12,53 @@ from app.models import Chunk, Document
 
 settings = get_settings()
 
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+# A page with less text than this is treated as a scanned image
+MIN_PAGE_TEXT = 25
+
+_ocr = None
+
+
+def _ocr_text(image) -> str:
+    """Reads text from an image (file path or numpy array) with RapidOCR.
+    Runs on the CPU with no internet; it reads English (and Chinese) print."""
+    global _ocr
+    if _ocr is None:
+        from rapidocr_onnxruntime import RapidOCR
+
+        _ocr = RapidOCR()
+    result, _ = _ocr(image)
+    return "\n".join(line[1] for line in result or [])
+
+
+def _ocr_scanned_pages(path: str, pages: list[str]) -> list[str]:
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(path)
+    try:
+        return [
+            text if len(text.strip()) >= MIN_PAGE_TEXT else _ocr_text(pdf[i].render(scale=2).to_numpy())
+            for i, text in enumerate(pages)
+        ]
+    finally:
+        pdf.close()
+
 
 def extract_text(path: str, content_type: str) -> str:
-    """Pull raw text out of a PDF / DOCX / TXT file."""
+    """Pull raw text out of a PDF / DOCX / TXT file or an image. Scanned
+    PDF pages and images are read with OCR."""
     lower = path.lower()
     if lower.endswith(".pdf") or content_type == "application/pdf":
         from pypdf import PdfReader
 
         reader = PdfReader(path)
-        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        pages = [page.extract_text() or "" for page in reader.pages]
+        if any(len(p.strip()) < MIN_PAGE_TEXT for p in pages):
+            pages = _ocr_scanned_pages(path, pages)
+        return "\n\n".join(pages)
+
+    if lower.endswith(IMAGE_EXTENSIONS) or content_type.startswith("image/"):
+        return _ocr_text(path)
 
     if lower.endswith(".docx"):
         import docx2txt
@@ -36,7 +75,8 @@ async def ingest_document(db: AsyncSession, document_id: uuid.UUID, path: str, c
         await db.execute(update(Document).where(Document.id == document_id).values(status="processing"))
         await db.commit()
 
-        text = extract_text(path, content_type)
+        # OCR can take a while, so keep it off the event loop
+        text = await asyncio.to_thread(extract_text, path, content_type)
         if not text.strip():
             raise ValueError("No extractable text found in document")
 

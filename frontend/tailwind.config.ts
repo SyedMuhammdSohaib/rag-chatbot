@@ -4,19 +4,22 @@ const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Colours come from CSS variables (see globals.css) so the light and
+      // dark themes can swap them; written as RGB channels so opacity
+      // modifiers like bg-panel/40 keep working.
       colors: {
         ink: {
-          DEFAULT: "#171B1F", // near-black, used sparingly
-          soft: "#1F262C",
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)", // text on brass buttons
+          soft: "rgb(var(--ink-soft) / <alpha-value>)",
         },
-        panel: "#12161A", // sidebar / app background
-        surface: "#181D22", // chat surface
-        parchment: "#E9E3D0", // primary text on dark
-        parchmentDim: "#A9A290",
-        brass: "#B08D57", // single accent: aged brass/gilding
-        brassSoft: "#8C6F43",
-        line: "#2A2F35",
-        error: "#C0604A",
+        panel: "rgb(var(--panel) / <alpha-value>)", // sidebar / app background
+        surface: "rgb(var(--surface) / <alpha-value>)", // chat surface
+        parchment: "rgb(var(--parchment) / <alpha-value>)", // primary text
+        parchmentDim: "rgb(var(--parchment-dim) / <alpha-value>)",
+        brass: "rgb(var(--brass) / <alpha-value>)", // single accent: aged brass/gilding
+        brassSoft: "rgb(var(--brass-soft) / <alpha-value>)",
+        line: "rgb(var(--line) / <alpha-value>)",
+        error: "rgb(var(--error) / <alpha-value>)",
       },
       fontFamily: {
         serif: ["'Source Serif 4'", "Georgia", "serif"],

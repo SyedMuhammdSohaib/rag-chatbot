@@ -1,6 +1,4 @@
-import json
 import random
-import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -8,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.language import with_language
-from app.llm import stream_chat_completion
+from app.llm import complete, parse_json_reply
 from app.models import Chunk, Document
 from app.schemas import QuizOut, QuizQuestion, QuizRequest
 
@@ -32,17 +30,7 @@ QUIZ_MAX_TOKENS = 2600
 
 
 def _parse_questions(raw: str) -> list[dict]:
-    """Pulls the question list out of the model's reply, even when it wraps
-    the JSON in ```fences``` or adds a sentence before it."""
-    text = re.sub(r"```(?:json)?", "", raw)
-    start = min((i for i in (text.find("{"), text.find("[")) if i != -1), default=-1)
-    end = max(text.rfind("}"), text.rfind("]"))
-    if start == -1 or end <= start:
-        return []
-    try:
-        data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return []
+    data = parse_json_reply(raw)
     if isinstance(data, dict):
         data = data.get("questions", [])
     return data if isinstance(data, list) else []
@@ -85,14 +73,7 @@ async def create_quiz(body: QuizRequest, db: AsyncSession = Depends(get_db)):
     )
 
     try:
-        raw = "".join(
-            [
-                token
-                async for token in stream_chat_completion(
-                    with_language(QUIZ_SYSTEM_PROMPT, body.language), [], prompt, max_tokens=QUIZ_MAX_TOKENS
-                )
-            ]
-        )
+        raw = await complete(with_language(QUIZ_SYSTEM_PROMPT, body.language), prompt, QUIZ_MAX_TOKENS)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"LLM error: {exc}") from exc
 

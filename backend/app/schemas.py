@@ -14,6 +14,26 @@ class DocumentOut(BaseModel):
     error_message: str | None
     uploaded_at: datetime
     chunk_count: int
+    source_url: str | None = None
+    summary_status: str | None = None
+    summary: str | None = None
+    key_points: list[str] | None = None
+    suggested_questions: list[str] | None = None
+
+
+class LinkRequest(BaseModel):
+    url: str
+    language: str | None = None
+
+
+class SummaryRequest(BaseModel):
+    language: str | None = None
+
+
+class CompareDocumentsRequest(BaseModel):
+    document_a: uuid.UUID
+    document_b: uuid.UUID
+    language: str | None = None
 
 
 class ConversationOut(BaseModel):
@@ -61,7 +81,19 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     cited_chunk_ids: list[str]
+    rating: int | None = None
+    model: str | None = None
     sources: list["SourceChunk"] = []
+
+
+class RatingUpdate(BaseModel):
+    rating: int | None = Field(None, ge=-1, le=1)  # 1, -1, or null to clear
+
+
+class CompareModelsRequest(BaseModel):
+    message: str
+    language: str | None = None
+    system_prompt: str | None = None
 
 
 class ChatRequest(BaseModel):
@@ -92,6 +124,7 @@ class ChunkContext(BaseModel):
     filename: str
     chunk_index: int
     chunk_count: int
+    source_url: str | None = None
     before: str
     content: str
     after: str
