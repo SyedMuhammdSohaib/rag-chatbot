@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -34,6 +34,11 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all never changes an existing table, so columns added after
+        # the first release are added here for databases made before them.
+        columns = {row[1] for row in await conn.execute(text("PRAGMA table_info(messages)"))}
+        if "cited_scores" not in columns:
+            await conn.execute(text("ALTER TABLE messages ADD COLUMN cited_scores JSON"))
 
 
 async def get_db():

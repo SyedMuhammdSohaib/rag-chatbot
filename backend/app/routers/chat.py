@@ -96,6 +96,7 @@ async def chat(body: ChatRequest, db: AsyncSession = Depends(get_db)):
                 role="assistant",
                 content=full_response,
                 cited_chunk_ids=[s.chunk_id for s in sources],
+                cited_scores=[s.score for s in sources],
             )
             save_db.add(assistant_msg)
             await save_db.commit()

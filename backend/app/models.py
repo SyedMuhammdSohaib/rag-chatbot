@@ -60,6 +60,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     cited_chunk_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # Match score of each cited chunk, same order as cited_chunk_ids
+    cited_scores: Mapped[list] = mapped_column(JSON, default=list)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 

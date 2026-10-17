@@ -5,8 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models import Conversation, Message
-from app.schemas import ConversationCreate, ConversationOut, ConversationRename, MessageOut, SystemPromptUpdate
+from app.models import Chunk, Conversation, Document, Message
+from app.schemas import (
+    ConversationCreate,
+    ConversationOut,
+    ConversationRename,
+    MessageOut,
+    SourceChunk,
+    SystemPromptUpdate,
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -34,7 +41,36 @@ async def get_messages(conversation_id: uuid.UUID, db: AsyncSession = Depends(ge
     result = await db.execute(
         select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at)
     )
-    return result.scalars().all()
+    messages = result.scalars().all()
+
+    # Look up every cited chunk in one query; chunks of deleted documents
+    # are simply missing and get skipped.
+    cited_ids = {uuid.UUID(cid) for m in messages for cid in m.cited_chunk_ids or []}
+    chunks = {}
+    if cited_ids:
+        rows = await db.execute(
+            select(Chunk.id, Chunk.document_id, Chunk.content, Document.filename)
+            .join(Document, Chunk.document_id == Document.id)
+            .where(Chunk.id.in_(cited_ids))
+        )
+        chunks = {str(r.id): r for r in rows}
+
+    out = []
+    for m in messages:
+        scores = m.cited_scores or []
+        sources = [
+            SourceChunk(
+                chunk_id=cid,
+                document_id=str(chunks[cid].document_id),
+                filename=chunks[cid].filename,
+                content=chunks[cid].content,
+                score=scores[i] if i < len(scores) else None,
+            )
+            for i, cid in enumerate(m.cited_chunk_ids or [])
+            if cid in chunks
+        ]
+        out.append(MessageOut.model_validate(m).model_copy(update={"sources": sources}))
+    return out
 
 
 @router.patch("/{conversation_id}", response_model=ConversationOut)

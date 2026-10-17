@@ -61,6 +61,7 @@ class MessageOut(BaseModel):
     content: str
     created_at: datetime
     cited_chunk_ids: list[str]
+    sources: list["SourceChunk"] = []
 
 
 class ChatRequest(BaseModel):
@@ -79,7 +80,7 @@ class SourceChunk(BaseModel):
     document_id: str
     filename: str
     content: str
-    score: float
+    score: float | None = None  # None for answers saved before scores were kept
 
 
 class ChunkContext(BaseModel):
@@ -113,3 +114,6 @@ class QuizQuestion(BaseModel):
 
 class QuizOut(BaseModel):
     questions: list[QuizQuestion]
+
+
+MessageOut.model_rebuild()

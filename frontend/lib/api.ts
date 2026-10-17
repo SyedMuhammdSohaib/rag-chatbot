@@ -21,6 +21,7 @@ export type Message = {
   content: string;
   created_at: string;
   cited_chunk_ids: string[];
+  sources: SourceChunk[];
 };
 
 export type SourceChunk = {
@@ -28,7 +29,7 @@ export type SourceChunk = {
   document_id: string;
   filename: string;
   content: string;
-  score: number;
+  score: number | null; // null for answers saved before scores were kept
 };
 
 export type ChunkContext = {

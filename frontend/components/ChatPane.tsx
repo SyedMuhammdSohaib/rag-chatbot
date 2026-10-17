@@ -49,14 +49,12 @@ export default function ChatPane({
   }, []);
 
   useEffect(() => {
-    // Saved messages come back without sources; keep the ones already on
-    // screen (e.g. the first answer of a conversation that was just created)
-    setMessages((prev) =>
-      initialMessages.map((m, i) => ({
+    setMessages(
+      initialMessages.map((m) => ({
         id: m.id,
         role: m.role,
         content: m.content,
-        sources: prev[i]?.role === m.role && prev[i]?.content === m.content ? prev[i].sources : undefined,
+        sources: m.sources,
       }))
     );
   }, [initialMessages]);

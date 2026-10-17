@@ -64,7 +64,9 @@ export default function MessageBubble({
                   >
                     <span className="text-brass">[{i + 1}]</span>{" "}
                     <span className="text-parchment/80">{s.filename}</span>{" "}
-                    <span className="text-parchmentDim">— {Math.round(s.score * 100)}% match</span>
+                    {s.score !== null && (
+                      <span className="text-parchmentDim">— {Math.round(s.score * 100)}% match</span>
+                    )}
                   </button>
                 </li>
               ))}
