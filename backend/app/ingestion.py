@@ -1,4 +1,5 @@
 import asyncio
+import re
 import uuid
 
 import numpy as np
@@ -17,6 +18,30 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 MIN_PAGE_TEXT = 25
 
 _ocr = None
+# One-letter words wordninja may produce that are real words
+_SINGLE_LETTER_WORDS = {"a", "A", "I"}
+
+
+def _restore_spaces(line: str) -> str:
+    """RapidOCR's model often drops the spaces in English text
+    ("Thewatercycleis"). Split long letter runs back into words with
+    wordninja's English word list, and space out punctuation and numbers.
+    Normal text with spaces comes through unchanged."""
+    import wordninja
+
+    def split_run(match: re.Match) -> str:
+        run = match.group(0)
+        if len(run) < 7:  # short runs are usually real words or names
+            return run
+        parts = wordninja.split(run)
+        if len(parts) < 2 or any(len(p) == 1 and p not in _SINGLE_LETTER_WORDS for p in parts):
+            return run
+        return " ".join(parts)
+
+    line = re.sub(r"[A-Za-z]+", split_run, line)
+    line = re.sub(r"([,.;:!?])(?=[A-Za-z])", r"\1 ", line)  # "rivers,lakes"
+    line = re.sub(r"(?<=[A-Za-z])(?=\d)", " ", line)  # "Rs500"
+    return re.sub(r"(?<=\d)(?=[A-Za-z])(?!(?:st|nd|rd|th)\b)", " ", line)  # "2026in", keeps "1st"
 
 
 def _ocr_text(image) -> str:
@@ -28,7 +53,7 @@ def _ocr_text(image) -> str:
 
         _ocr = RapidOCR()
     result, _ = _ocr(image)
-    return "\n".join(line[1] for line in result or [])
+    return "\n".join(_restore_spaces(line[1]) for line in result or [])
 
 
 def _ocr_scanned_pages(path: str, pages: list[str]) -> list[str]:

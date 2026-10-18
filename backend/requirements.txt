@@ -24,5 +24,7 @@ rapidocr-onnxruntime==1.4.4
 # newer opencv needs numpy 2, which fastembed 0.3.6 can't use
 opencv-python==4.11.0.86
 pypdfium2==4.30.0
+# puts back the spaces OCR drops between English words
+wordninja==2.0.0
 # captions of YouTube videos added by link
 youtube-transcript-api==1.2.2
